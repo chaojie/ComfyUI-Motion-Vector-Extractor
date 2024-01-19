@@ -8,9 +8,11 @@ import numpy as np
 import cv2
 
 import tempfile
+import folder_paths
 import shutil
 import subprocess
 import json
+import numpy as np
 
 class MotionVectorExtractor:
     @classmethod
@@ -19,16 +21,17 @@ class MotionVectorExtractor:
             "required": {
                 "video_url": ("STRING", {"default":""}),
                 "frame_length": ("INT", {"default": 2}),
+                "width": ("INT", {"default": 320}),
+                "height": ("INT", {"default": 576}),
             }
         }
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("motionbrush",)
-    OUTPUT_IS_LIST = (True, )
     FUNCTION = "run_inference"
     CATEGORY = "Motion Brush"
 
-    def run_inference(self,video_url,frame_length):
+    def run_inference(self,video_url,frame_length,width,height):
         from mvextractor.videocap import VideoCap
         cap = VideoCap()
 
@@ -61,10 +64,39 @@ class MotionVectorExtractor:
 
             if len(motion_vectors) > 0:
                 num_mvs = np.shape(motion_vectors)[0]
+                
+                ptlist=[]
+                if len(trajslist)>0:
+                    ptlist=np.array(trajslist[0])[:,-1].tolist()
                 for mv in np.split(motion_vectors, num_mvs):
-                    trajs.append([[int(mv[0, 3]), int(mv[0, 4])],[int(mv[0, 5]), int(mv[0, 6])]])
+                    (x1,y1,x2,y2)=(int(mv[0, 3]), int(mv[0, 4]),int(mv[0, 5]), int(mv[0, 6]))
+                    if x1>width-1:
+                        x1=width-1
+                    if y1>height-1:
+                        y1=height-1
+                    if x2>width-1:
+                        x2=width-1
+                    if y2>height-1:
+                        y2=height-1
+                    if x1<1:
+                        x1=1
+                    if y1<1:
+                        y1=1
+                    if x2<1:
+                        x2=1
+                    if y2<1:
+                        y2=1
+                    if abs(x2-x1)+abs(y2-y1)>0:
+                        trajs.append([[x1,y1],[x2,y2]]) 
+                    '''
+                    if len(trajslist)>0:
+                        if [int(mv[0, 3]), int(mv[0, 4])] in ptlist:
+                            trajs.append([[int(mv[0, 3]), int(mv[0, 4])],[int(mv[0, 5]), int(mv[0, 6])]])
+                    else:
+                       trajs.append([[int(mv[0, 3]), int(mv[0, 4])],[int(mv[0, 5]), int(mv[0, 6])]]) 
+                    '''
 
-                trajslist.append(json.dumps(trajs))
+                trajslist.append(trajs)
 
             # store motion vectors, frames, etc. in output directory
 
@@ -75,7 +107,41 @@ class MotionVectorExtractor:
 
         cap.release()
 
-        return (trajslist,)
+        revert_trajs=[]
+        plist=[]
+        #print(f'{trajslist}')
+        for itrajslist in range(len(trajslist)):
+            trajs=trajslist[itrajslist]
+            if itrajslist==0:
+                revert_trajs=trajs
+                ptlist=np.array(revert_trajs)[:,1].tolist()
+            else:
+                #print(f'{revert_trajs}')
+                #ptlist=np.array(revert_trajs)[:,0].tolist()
+                for traj in trajs:
+                    if traj[0] in ptlist:
+                        ptind=ptlist.index(traj[0])
+                        ptlist[ptind]=traj[1]
+                        print(f'x1:{revert_trajs[ptind][-1][0]},y1:{revert_trajs[ptind][-1][1]},x2:{traj[1][0]},y2:{traj[1][1]}')
+                        if abs(traj[1][0]-revert_trajs[ptind][-1][0])+abs(traj[1][1]-revert_trajs[ptind][-1][1])>5:
+                            revert_trajs[ptind].append(traj[1])
+            '''
+            trajs=trajslist[len(trajslist)-1-itrajslist]
+            print(f'{plist}')
+            if itrajslist==0:
+                revert_trajs=trajs
+                ptlist=np.array(revert_trajs)[:,0].tolist()
+            else:
+                print(f'{revert_trajs}')
+                #ptlist=np.array(revert_trajs)[:,0].tolist()
+                for traj in trajs:
+                    if traj[1] in ptlist:
+                        ptind=ptlist.index(traj[1])
+                        ptlist[ptind]=traj[0]
+                        revert_trajs[ptind].insert(0,traj[0])
+            '''
+            
+        return (json.dumps(revert_trajs),)
 
 ffmpeg_path = shutil.which("ffmpeg")
 
@@ -110,8 +176,9 @@ class VideoCombineThenPath:
 
         format_type, format_ext = format.split("/")
 
-        tf = tempfile.NamedTemporaryFile()
-        filename = tf.name
+        comfy_path = os.path.dirname(folder_paths.__file__)
+        #tf = tempfile.NamedTemporaryFile()
+        filename = f'{comfy_path}/output/mvexrator.mp4'
 
         if ffmpeg_path is None:
             print("no ffmpeg path")
@@ -132,7 +199,7 @@ class VideoCombineThenPath:
             "-pix_fmt", "yuv420p"
         ]
 
-        filename = filename + '.mp4'
+        #filename = filename
 
         res = subprocess.run(args_mp4 + [filename], input=images.tobytes(), capture_output=True)
         print(res.stderr)
