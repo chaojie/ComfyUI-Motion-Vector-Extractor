@@ -23,6 +23,7 @@ class MotionVectorExtractor:
                 "frame_length": ("INT", {"default": 2}),
                 "width": ("INT", {"default": 320}),
                 "height": ("INT", {"default": 576}),
+                "scale": ("INT", {"default": 4}),
             }
         }
 
@@ -31,7 +32,7 @@ class MotionVectorExtractor:
     FUNCTION = "run_inference"
     CATEGORY = "Motion Brush"
 
-    def run_inference(self,video_url,frame_length,width,height):
+    def run_inference(self,video_url,frame_length,width,height,scale):
         from mvextractor.videocap import VideoCap
         cap = VideoCap()
 
@@ -86,7 +87,7 @@ class MotionVectorExtractor:
                         x2=1
                     if y2<1:
                         y2=1
-                    if abs(x2-x1)+abs(y2-y1)>0:
+                    if abs(x2-x1)+abs(y2-y1)>scale:
                         trajs.append([[x1,y1],[x2,y2]]) 
                     '''
                     if len(trajslist)>0:
@@ -114,16 +115,20 @@ class MotionVectorExtractor:
             trajs=trajslist[itrajslist]
             if itrajslist==0:
                 revert_trajs=trajs
-                ptlist=np.array(revert_trajs)[:,1].tolist()
+                ptlistfirst=np.array(revert_trajs)[:,1]
+                ptlist=(ptlistfirst/scale).astype('int').tolist()
             else:
                 #print(f'{revert_trajs}')
                 #ptlist=np.array(revert_trajs)[:,0].tolist()
                 for traj in trajs:
-                    if traj[0] in ptlist:
-                        ptind=ptlist.index(traj[0])
-                        ptlist[ptind]=traj[1]
-                        print(f'x1:{revert_trajs[ptind][-1][0]},y1:{revert_trajs[ptind][-1][1]},x2:{traj[1][0]},y2:{traj[1][1]}')
-                        if abs(traj[1][0]-revert_trajs[ptind][-1][0])+abs(traj[1][1]-revert_trajs[ptind][-1][1])>5:
+                    scaletraj0=[int(traj[0][0]/scale),int(traj[0][1]/scale)]
+                    scaletraj1=[int(traj[1][0]/scale),int(traj[1][1]/scale)]
+                    if scaletraj0 in ptlist:
+                        ptind=ptlist.index(scaletraj0)
+                        ptlist[ptind]=scaletraj1
+                        #print(f'x1:{revert_trajs[ptind][-1][0]},y1:{revert_trajs[ptind][-1][1]},x2:{traj[1][0]},y2:{traj[1][1]}')
+                        #if abs(traj[1][0]-revert_trajs[ptind][-1][0])+abs(traj[1][1]-revert_trajs[ptind][-1][1])>5:
+                        if int(traj[1][0]/scale)==int(revert_trajs[ptind][-1][0]/scale) and int(traj[1][1]/scale)==int(revert_trajs[ptind][-1][1]/scale):
                             revert_trajs[ptind].append(traj[1])
             '''
             trajs=trajslist[len(trajslist)-1-itrajslist]
